@@ -61,7 +61,7 @@ DEFAULT_SEED_PROMPTS = [
 # Training hyperparameters (referenced by notebook — uses Unsloth)
 TRAINING_DEFAULTS = {
     "base_model": "unsloth/Qwen2.5-7B-Instruct-bnb-4bit",
-    "num_epochs": 2,
+    "num_epochs": 3,
     "learning_rate": 2e-4,
     "per_device_train_batch_size": 2,
     "gradient_accumulation_steps": 4,

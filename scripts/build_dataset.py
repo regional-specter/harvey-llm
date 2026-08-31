@@ -32,6 +32,8 @@ from dataset_builder.generators.synthetic_generator import (
     generate_synthetic_pairs,
     load_seed_prompts,
 )
+from dataset_builder.extractors.llm_extractor import extract_pairs_from_scripts
+from dataset_builder.parsers.springfield_scraper import scrape_seasons
 from dataset_builder.parsers.subtitle import parse_directory
 from dataset_builder.parsers.transcript_scraper import fetch_transcript, scrape_and_save
 
@@ -40,6 +42,66 @@ from dataset_builder.parsers.transcript_scraper import fetch_transcript, scrape_
 def cli() -> None:
     """Harvey-LLM persona dataset builder."""
     load_dotenv()
+
+
+@cli.command("scrape-springfield")
+@click.option("--output-dir", type=click.Path(path_type=Path), default=RAW_DIR)
+@click.option("--season-start", default=1, help="First season to scrape")
+@click.option("--season-end", default=3, help="Last season to scrape (inclusive)")
+def scrape_springfield_cmd(output_dir: Path, season_start: int, season_end: int) -> None:
+    """Download Suits episode scripts from Springfield-Springfield."""
+    seasons = range(season_start, season_end + 1)
+    click.echo(f"Scraping seasons {season_start}-{season_end}...")
+    saved = scrape_seasons(output_dir, seasons=seasons)
+    click.echo(f"Saved {len(saved)} episode scripts to {output_dir}")
+
+
+@cli.command("extract-llm")
+@click.option("--input-dir", type=click.Path(exists=True, path_type=Path), default=RAW_DIR)
+@click.option("--output", type=click.Path(path_type=Path), default=PROCESSED_DIR / "harvey_pairs.jsonl")
+@click.option("--model", default=DEFAULT_GEMINI_MODEL)
+@click.option("--append/--overwrite", default=True)
+@click.option("--max-episodes", default=0, help="Limit episodes to process (0 = all)")
+def extract_llm_cmd(
+    input_dir: Path,
+    output: Path,
+    model: str,
+    append: bool,
+    max_episodes: int,
+) -> None:
+    """Use Gemini to extract Harvey pairs from unlabeled episode scripts."""
+    scripts: list[tuple[str, str]] = []
+    for path in sorted(input_dir.glob("s*.txt")):
+        text = path.read_text(encoding="utf-8", errors="replace")
+        if len(text) > 500:
+            scripts.append((path.stem, text))
+
+    if max_episodes > 0:
+        scripts = scripts[:max_episodes]
+
+    if not scripts:
+        click.echo("No episode scripts found in data/raw/ (expected s01e01.txt, etc.)", err=True)
+        raise SystemExit(1)
+
+    existing: list = []
+    if append and output.exists():
+        existing = load_pairs_jsonl(output)
+
+    click.echo(f"Extracting Harvey pairs from {len(scripts)} episodes with {model}...")
+    all_pairs = list(existing)
+
+    for episode, text in scripts:
+        click.echo(f"  → {episode}")
+        pairs = extract_pairs_from_scripts([(episode, text)], model=model)
+        all_pairs.extend(pairs)
+        all_pairs = deduplicate_pairs(all_pairs)
+
+        output.parent.mkdir(parents=True, exist_ok=True)
+        with output.open("w", encoding="utf-8") as f:
+            for pair in all_pairs:
+                f.write(pair.model_dump_json() + "\n")
+
+    click.echo(f"Saved {len(all_pairs)} unique pairs → {output}")
 
 
 @cli.command("parse")
@@ -107,17 +169,34 @@ def scrape_batch_cmd(index_url: str, output_dir: Path, max_pages: int) -> None:
 @click.option("--output", type=click.Path(path_type=Path), default=SYNTHETIC_DIR / "synthetic_pairs.jsonl")
 @click.option("--model", default=DEFAULT_GEMINI_MODEL, help="Gemini model for generation")
 @click.option("--count", default=0, help="Limit number of prompts (0 = all)")
-def generate_cmd(prompts: Path | None, output: Path, model: str, count: int) -> None:
+@click.option("--append/--overwrite", default=False, help="Append to existing output instead of replacing")
+@click.option("--variations", default=1, help="Generate N variations per prompt")
+def generate_cmd(
+    prompts: Path | None,
+    output: Path,
+    model: str,
+    count: int,
+    append: bool,
+    variations: int,
+) -> None:
     """Generate synthetic Harvey-style pairs using a frontier LLM."""
     seed_prompts = load_seed_prompts(prompts)
     if count > 0:
         seed_prompts = seed_prompts[:count]
 
-    click.echo(f"Generating {len(seed_prompts)} synthetic pairs with {model}...")
-    if output.exists():
+    scenarios: list[str] = []
+    for prompt in seed_prompts:
+        for v in range(variations):
+            if variations == 1:
+                scenarios.append(prompt)
+            else:
+                scenarios.append(f"{prompt} (variation {v + 1} — use a fresh angle)")
+
+    click.echo(f"Generating {len(scenarios)} synthetic pairs with {model}...")
+    if output.exists() and not append:
         output.unlink()
 
-    pairs = generate_synthetic_pairs(seed_prompts, model=model, output_path=output)
+    pairs = generate_synthetic_pairs(scenarios, model=model, output_path=output)
     click.echo(f"Generated {len(pairs)} pairs → {output}")
 
 
