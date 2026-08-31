@@ -115,6 +115,28 @@ HARVEY: Because I'm the only one who sees the room.
 
 ---
 
+## Chat TUI (local)
+
+Talk to your fine-tuned Harvey model in the terminal.
+
+**Requirements:** Python 3.10+, Apple Silicon or NVIDIA GPU, Hugging Face login (`huggingface-cli login`).
+
+```bash
+pip install -r requirements-chat.txt
+python scripts/chat.py
+```
+
+Pulls `Aby-ss/harvey-llm` (LoRA) from Hugging Face. On **M3 8 GB**, close other apps before launching — first run downloads ~15 GB.
+
+| Key | Action |
+|---|---|
+| Enter | Send message |
+| `/clear` | Clear conversation |
+| `/quit` | Exit |
+| `Ctrl+L` | Clear conversation |
+
+---
+
 ## CLI reference
 
 | Command | What it does |
