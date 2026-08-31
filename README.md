@@ -115,18 +115,34 @@ HARVEY: Because I'm the only one who sees the room.
 
 ---
 
-## Chat TUI (local)
+## Chat TUI (cloud)
 
-Talk to your fine-tuned Harvey model in the terminal.
+Talk to Harvey in the terminal. **The model runs on a Hugging Face Space GPU** — nothing downloads to your Mac.
 
-**Requirements:** Python 3.10+, Apple Silicon or NVIDIA GPU, Hugging Face login (`huggingface-cli login`).
+### 1. Deploy the Space (one-time)
+
+```bash
+# Create Space on HF (Gradio, GPU hardware in Space settings)
+huggingface-cli repo create harvey-llm-chat --type space
+
+# Upload space/ folder contents to the Space repo, then in Space Settings:
+#   Hardware → GPU (T4 small is enough)
+#   Visibility → Public (or set HF_TOKEN locally for private)
+```
+
+Or on [huggingface.co/new-space](https://huggingface.co/new-space): SDK **Gradio**, name `harvey-llm-chat`, upload files from `space/`.
+
+**Use T4 GPU hardware** — ZeroGPU free tier has a small daily quota (~3 min/day) and a 7B model burns through it fast. T4 loads once and stays warm (~$0.60/hr while the Space is running; pause when idle).
+
+### 2. Run the local TUI
 
 ```bash
 pip install -r requirements-chat.txt
+export HARVEY_SPACE="Aby-ss/harvey-llm-chat"   # your Space id
 python scripts/chat.py
 ```
 
-Pulls `Aby-ss/harvey-llm` (LoRA) from Hugging Face. On **M3 8 GB**, close other apps before launching — first run downloads ~15 GB.
+Optional: `huggingface-cli login` or `export HF_TOKEN=...` if the Space is private.
 
 | Key | Action |
 |---|---|
@@ -134,6 +150,8 @@ Pulls `Aby-ss/harvey-llm` (LoRA) from Hugging Face. On **M3 8 GB**, close other 
 | `/clear` | Clear conversation |
 | `/quit` | Exit |
 | `Ctrl+L` | Clear conversation |
+
+You can also chat in the browser at `https://huggingface.co/spaces/Aby-ss/harvey-llm-chat`.
 
 ---
 

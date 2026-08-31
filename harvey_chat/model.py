@@ -1,137 +1,84 @@
-"""Load Harvey-LLM via Unsloth and run streaming inference."""
+"""Cloud Harvey client — calls a Hugging Face Space (no local model download)."""
 
 from __future__ import annotations
 
-import platform
+import os
 import sys
-from collections.abc import Iterator
-from threading import Thread
+from collections.abc import Callable, Iterator
 
-from transformers import TextIteratorStreamer
-
-from harvey_chat.config import (
-    ADAPTER_REPO,
-    BASE_MODEL,
-    MAX_HISTORY_TURNS,
-    MAX_NEW_TOKENS,
-    MAX_SEQ_LENGTH,
-    REPETITION_PENALTY,
-    SYSTEM_PROMPT,
-    TEMPERATURE,
-    TOP_P,
-)
+from harvey_chat.config import MAX_HISTORY_TURNS, SPACE_ID
 
 
 class HarveyModel:
-    """Wraps Unsloth model load + chat generation."""
+    """Talks to the Harvey chat Space via Gradio API."""
 
     def __init__(self) -> None:
-        self.model = None
-        self.tokenizer = None
-        self.history: list[dict[str, str]] = []
+        self._client = None
+        self.history: list[list[str | None]] = []
 
-    def load(self) -> str:
-        """Load base model + LoRA adapter. Returns status message."""
-        from unsloth import FastLanguageModel
-        from unsloth.chat_templates import get_chat_template
+    def load(self, on_status: Callable[[str], None] | None = None) -> str:
+        def status(msg: str) -> None:
+            if on_status:
+                on_status(msg)
 
-        is_mac = platform.system() == "Darwin"
-        load_in_4bit = not is_mac  # 4-bit via bitsandbytes is unreliable on Mac
+        from gradio_client import Client
 
-        if is_mac:
-            status = "Loading on Apple Silicon (MPS, 8-bit) — close other apps…"
-        else:
-            status = "Loading 4-bit model…"
+        token = os.getenv("HF_TOKEN") or os.getenv("HUGGINGFACE_HUB_TOKEN")
 
-        # Try adapter repo first (includes LoRA config)
+        status(f"Connecting to {SPACE_ID}…")
+        self._client = Client(SPACE_ID, hf_token=token)
+
+        status("Warming up cloud GPU (first message may take ~1 min)…")
         try:
-            self.model, self.tokenizer = FastLanguageModel.from_pretrained(
-                model_name=ADAPTER_REPO,
-                max_seq_length=MAX_SEQ_LENGTH,
-                dtype=None,
-                load_in_4bit=load_in_4bit,
-                load_in_8bit=is_mac,
+            self._client.predict(
+                "Hello",
+                [],
+                api_name="/chat",
             )
         except Exception:
-            self.model, self.tokenizer = FastLanguageModel.from_pretrained(
-                model_name=BASE_MODEL,
-                max_seq_length=MAX_SEQ_LENGTH,
-                dtype=None,
-                load_in_4bit=load_in_4bit,
-                load_in_8bit=is_mac,
-            )
-            from peft import PeftModel
+            pass  # cold start; real chat will retry
 
-            self.model = PeftModel.from_pretrained(self.model, ADAPTER_REPO)
-
-        self.tokenizer = get_chat_template(self.tokenizer, chat_template="qwen-2.5")
-        FastLanguageModel.for_inference(self.model)
-
-        device = "MPS" if is_mac else "CUDA"
-        return f"{status} Ready ({device}, ctx={MAX_SEQ_LENGTH})."
+        return f"Connected to cloud ({SPACE_ID}). You can type now."
 
     def clear_history(self) -> None:
         self.history.clear()
 
-    def _build_messages(self, user_text: str) -> list[dict[str, str]]:
-        messages = [{"role": "system", "content": SYSTEM_PROMPT}]
-        messages.extend(self.history[-MAX_HISTORY_TURNS * 2 :])
-        messages.append({"role": "user", "content": user_text})
-        return messages
-
     def stream_reply(self, user_text: str) -> Iterator[str]:
-        """Yield tokens for Harvey's reply."""
-        if self.model is None or self.tokenizer is None:
-            raise RuntimeError("Model not loaded")
+        if self._client is None:
+            raise RuntimeError("Not connected to cloud Space")
 
-        messages = self._build_messages(user_text)
-        prompt = self.tokenizer.apply_chat_template(
-            messages,
-            tokenize=False,
-            add_generation_prompt=True,
-        )
-        inputs = self.tokenizer(prompt, return_tensors="pt").to(self.model.device)
-
-        streamer = TextIteratorStreamer(
-            self.tokenizer,
-            skip_prompt=True,
-            skip_special_tokens=True,
+        trimmed = [(u, a) for u, a in self.history[-MAX_HISTORY_TURNS:] if u]
+        result = self._client.predict(
+            user_text,
+            trimmed,
+            api_name="/chat",
         )
 
-        gen_kwargs = {
-            **inputs,
-            "max_new_tokens": MAX_NEW_TOKENS,
-            "temperature": TEMPERATURE,
-            "top_p": TOP_P,
-            "repetition_penalty": REPETITION_PENALTY,
-            "do_sample": True,
-            "streamer": streamer,
-            "use_cache": True,
-        }
+        if isinstance(result, str):
+            reply = result.strip()
+            self.history.append([user_text, reply])
+        elif isinstance(result, list) and result:
+            # ChatInterface may return updated history
+            self.history = [[str(u), str(a or "")] for u, a in result]
+            reply = (self.history[-1][1] or "").strip()
+        else:
+            raise RuntimeError(f"Unexpected Space response: {result!r}")
 
-        thread = Thread(target=self.model.generate, kwargs=gen_kwargs)
-        thread.start()
+        if not reply:
+            return
 
-        collected: list[str] = []
-        for token in streamer:
-            collected.append(token)
-            yield token
-
-        thread.join()
-        reply = "".join(collected).strip()
-        if reply:
-            self.history.append({"role": "user", "content": user_text})
-            self.history.append({"role": "assistant", "content": reply})
+        # Space returns full reply; simulate streaming for the TUI
+        words = reply.split()
+        for i, word in enumerate(words):
+            yield word if i == len(words) - 1 else word + " "
 
 
 def check_platform() -> list[str]:
-    """Return warnings for low-memory setups."""
     warnings: list[str] = []
-    if platform.system() == "Darwin" and platform.machine() == "arm64":
+    if not (os.getenv("HF_TOKEN") or os.getenv("HUGGINGFACE_HUB_TOKEN")):
         warnings.append(
-            "M3 8 GB: quit Chrome/other heavy apps before loading. "
-            "First load downloads ~15 GB from Hugging Face."
+            "Set HF_TOKEN (or run huggingface-cli login) if the Space is private."
         )
-    if sys.maxsize <= 2**32:
-        warnings.append("32-bit Python detected — use 64-bit Python 3.10+.")
+    if sys.version_info < (3, 10):
+        warnings.append("Python 3.10+ recommended.")
     return warnings

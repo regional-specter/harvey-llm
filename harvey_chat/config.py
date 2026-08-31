@@ -1,17 +1,21 @@
-"""Chat TUI configuration — tuned for M3 Air 8 GB."""
+"""Chat TUI configuration — cloud inference via Hugging Face Space."""
+
+import os
 
 from configs.dataset_config import HARVEY_SYSTEM_PROMPT
 
-# Hugging Face repos
-BASE_MODEL = "unsloth/Qwen2.5-7B-Instruct-bnb-4bit"
-ADAPTER_REPO = "Aby-ss/harvey-llm"
+# Hugging Face Space that runs the model on a cloud GPU
+# Create with: huggingface-cli repo create harvey-llm-chat --type space
+# Then upload space/ files and set Hardware → GPU
+SPACE_ID = os.getenv("HARVEY_SPACE", "Aby-ss/harvey-llm-chat")
 
-# Memory-friendly defaults for 8 GB unified RAM
+ADAPTER_REPO = "Aby-ss/harvey-llm"
+BASE_MODEL = "unsloth/Qwen2.5-7B-Instruct-bnb-4bit"
+
 MAX_SEQ_LENGTH = 1024
 MAX_NEW_TOKENS = 200
-MAX_HISTORY_TURNS = 4  # user+assistant pairs kept in context
+MAX_HISTORY_TURNS = 4
 
-# Generation
 TEMPERATURE = 0.7
 TOP_P = 0.9
 REPETITION_PENALTY = 1.12
@@ -28,6 +32,7 @@ BANNER = r"""
 """
 
 WELCOME = (
-    "Type a message and press Enter. Harvey doesn't do small talk — make it count.\n"
+    "Harvey runs on a Hugging Face Space — nothing downloads to your Mac.\n"
+    "Connecting… first reply may take ~1 min while the cloud GPU wakes up.\n"
     "Commands: /clear  /quit"
 )

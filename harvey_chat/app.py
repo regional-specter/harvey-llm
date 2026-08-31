@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from textual import on, work
 from textual.app import App, ComposeResult
-from textual.containers import VerticalScroll
-from textual.widgets import Footer, Header, Input, Static
+from textual.containers import Horizontal, VerticalScroll
+from textual.widgets import Footer, Header, Input, LoadingIndicator, Static
 
 from harvey_chat.config import BANNER, WELCOME
 from harvey_chat.model import HarveyModel, check_platform
@@ -53,11 +53,21 @@ class HarveyApp(App):
         padding: 0 1;
         width: 100%;
     }
-    #status {
+    #status-row {
         dock: bottom;
-        color: #888;
-        padding: 0 2;
+        height: auto;
         background: #111;
+        padding: 0 2;
+    }
+    #spinner {
+        width: auto;
+        height: 1;
+        color: #c9a227;
+    }
+    #status {
+        width: 1fr;
+        color: #888;
+        padding: 0 0 1 0;
     }
     """
 
@@ -75,8 +85,13 @@ class HarveyApp(App):
         yield Header(show_clock=False)
         yield Static(BANNER, id="banner")
         yield VerticalScroll(id="chat")
-        yield Static("Initializing…", id="status")
-        yield Input(placeholder="Say something to Harvey…", id="input-box")
+        with Horizontal(id="status-row"):
+            yield LoadingIndicator(id="spinner")
+            yield Static("Connecting to cloud Space…", id="status")
+        yield Input(
+            placeholder="Locked until connected — see status above…",
+            id="input-box",
+        )
         yield Footer()
 
     def on_mount(self) -> None:
@@ -94,22 +109,34 @@ class HarveyApp(App):
     def _set_status(self, text: str) -> None:
         self.query_one("#status", Static).update(text)
 
+    def _update_load_status(self, msg: str) -> None:
+        self._set_status(msg)
+
     @work(thread=True)
     def load_model(self) -> None:
         try:
-            msg = self.harvey.load()
+            msg = self.harvey.load(
+                on_status=lambda s: self.call_from_thread(self._update_load_status, s)
+            )
             self.call_from_thread(self._on_model_ready, msg)
         except Exception as exc:
             self.call_from_thread(self._on_model_error, str(exc))
 
     def _on_model_ready(self, msg: str) -> None:
+        self.query_one("#spinner", LoadingIndicator).remove()
         self._set_status(msg)
-        self.query_one("#input-box", Input).disabled = False
-        self.query_one("#input-box", Input).focus()
+        inp = self.query_one("#input-box", Input)
+        inp.disabled = False
+        inp.placeholder = "Say something to Harvey…"
+        inp.focus()
 
     def _on_model_error(self, error: str) -> None:
+        self.query_one("#spinner", LoadingIndicator).remove()
         self._set_status(f"Load failed: {error}")
         self._add_message("SYSTEM", f"Error loading model: {error}")
+        inp = self.query_one("#input-box", Input)
+        inp.disabled = False
+        inp.placeholder = "Model failed to load — /quit to exit"
 
     @on(Input.Submitted, "#input-box")
     def handle_input(self, event: Input.Submitted) -> None:
