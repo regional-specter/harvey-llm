@@ -115,43 +115,35 @@ HARVEY: Because I'm the only one who sees the room.
 
 ---
 
-## Chat TUI (cloud)
+## Chat with Harvey
 
-Talk to Harvey in the terminal. **The model runs on a Hugging Face Space GPU** — nothing downloads to your Mac.
+| Option | Cost | Best for |
+|---|---|---|
+| **[Colab notebook](notebooks/harvey_chat.ipynb)** | **Free** (T4 GPU session) | Testing & chatting — re-run when session ends |
+| **HF Space (T4)** | ~$0.60/hr while running | Always-on URL — pause Space when idle |
+| **HF Space (ZeroGPU)** | Free but ~3 min/day quota | Not viable for 7B chat |
+| **Local TUI** | Free but ~15 GB download | Not recommended on 8 GB Mac |
 
-### 1. Deploy the Space (one-time)
+### Free: Colab chat (recommended)
 
-```bash
-# Create Space on HF (Gradio, GPU hardware in Space settings)
-huggingface-cli repo create harvey-llm-chat --type space
+1. Open [`notebooks/harvey_chat.ipynb`](notebooks/harvey_chat.ipynb) in Colab  
+2. **Runtime → Change runtime type → T4 GPU**  
+3. Run all cells — a Gradio chat link appears (~3 min first load)  
+4. Session ends when you close Colab or after idle timeout — just re-run
 
-# Upload space/ folder contents to the Space repo, then in Space Settings:
-#   Hardware → GPU (T4 small is enough)
-#   Visibility → Public (or set HF_TOKEN locally for private)
-```
+### Paid: HF Space (always-on)
 
-Or on [huggingface.co/new-space](https://huggingface.co/new-space): SDK **Gradio**, name `harvey-llm-chat`, upload files from `space/`.
+See `space/` folder. Requires **T4 GPU** hardware in Space settings (~$0.60/hr while running; pause when idle).
 
-**Use T4 GPU hardware** — ZeroGPU free tier has a small daily quota (~3 min/day) and a 7B model burns through it fast. T4 loads once and stays warm (~$0.60/hr while the Space is running; pause when idle).
-
-### 2. Run the local TUI
+### Local TUI (calls HF Space)
 
 ```bash
 pip install -r requirements-chat.txt
-export HARVEY_SPACE="Aby-ss/harvey-llm-chat"   # your Space id
+export HARVEY_SPACE="Aby-ss/harvey-llm-chat"
 python scripts/chat.py
 ```
 
-Optional: `huggingface-cli login` or `export HF_TOKEN=...` if the Space is private.
-
-| Key | Action |
-|---|---|
-| Enter | Send message |
-| `/clear` | Clear conversation |
-| `/quit` | Exit |
-| `Ctrl+L` | Clear conversation |
-
-You can also chat in the browser at `https://huggingface.co/spaces/Aby-ss/harvey-llm-chat`.
+Only works if your Space is running on T4 GPU.
 
 ---
 
