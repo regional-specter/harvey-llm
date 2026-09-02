@@ -1,5 +1,8 @@
 <div align="center">
 
+
+<img width="1280" height="360" alt="Copy of Copy of Untitled Design" src="https://github.com/user-attachments/assets/809de976-8de8-4a2c-8567-188f8c15236b" />
+
 # Harvey-LLM
 
 [![Python](https://img.shields.io/badge/Python-3.10%2B-blue.svg)](https://www.python.org/)
@@ -14,6 +17,7 @@ This project teaches a language model to talk like Harvey Specter from the TV sh
 ## What is fine-tuning
 
 A base language model knows general language. It does not know your task. Fine-tuning shows the model many examples of what you want. The model learns a new style or skill. Here you teach it Harvey Specter's voice. You use short context and response pairs from Suits dialogue. You can add synthetic examples from Gemini.
+
 
 ## What is QLoRA
 
